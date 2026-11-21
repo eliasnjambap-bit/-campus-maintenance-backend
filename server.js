@@ -2,7 +2,7 @@ require("dotenv").config({ quiet: true });
 
 const express = require("express");
 const cors = require("cors");
-const db = require("./db");
+const { db, initializeDatabase } = require("./db");
 const recordsRouter = require("./routes/records");
 
 const app = express();
@@ -253,7 +253,8 @@ app.get("/", (req, res) => {
         </p>
 
         <p>
-            The backend uses Node.js, Express and SQLite
+            The backend uses Node.js, Express and
+            Turso (SQLite-compatible cloud database)
             to create, retrieve, update and delete
             maintenance records.
             All records contain demonstration data.
@@ -403,9 +404,7 @@ app.get("/", (req, res) => {
                     <tr>
                         <td>status</td>
                         <td>String</td>
-                        <td>
-                            Pending, In progress, Completed
-                        </td>
+                        <td>Pending, In progress, Completed</td>
                     </tr>
 
                 </tbody>
@@ -568,9 +567,9 @@ app.get("/", (req, res) => {
 // GET /health
 // ========================================
 
-app.get("/health", (req, res) => {
+app.get("/health", async (req, res) => {
     try {
-        db.prepare("SELECT 1").get();
+        await db.execute("SELECT 1");
 
         res.status(200).json({
             status: "OK",
@@ -579,7 +578,7 @@ app.get("/health", (req, res) => {
         });
 
     } catch (error) {
-        console.error(error);
+        console.error("Database health check failed:", error);
 
         res.status(503).json({
             message: "Database connection failed."
@@ -630,16 +629,28 @@ app.use((error, req, res, next) => {
 });
 
 // ========================================
-// START SERVER
+// INITIALIZE DATABASE AND START SERVER
 // ========================================
 
-app.listen(port, "0.0.0.0", () => {
+async function startServer() {
+    try {
+        // Create tables and insert starting records
+        await initializeDatabase();
 
-    console.log("-----------------------------------");
-    console.log("Campus Maintenance Management System");
-    console.log("Backend API running successfully.");
-    console.log(`Server listening on port ${port}`);
-    console.log(`Local URL: http://localhost:${port}`);
-    console.log("-----------------------------------");
+        // Start only after database initialization succeeds
+        app.listen(port, "0.0.0.0", () => {
+            console.log("-----------------------------------");
+            console.log("Campus Maintenance Management System");
+            console.log("Backend API running successfully.");
+            console.log(`Server listening on port ${port}`);
+            console.log(`Local URL: http://localhost:${port}`);
+            console.log("-----------------------------------");
+        });
 
-});
+    } catch (error) {
+        console.error("Failed to initialize database:", error);
+        process.exit(1);
+    }
+}
+
+startServer();

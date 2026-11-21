@@ -1,5 +1,5 @@
 const express = require("express");
-const db = require("../db");
+const { db } = require("../db");
 
 const router = express.Router();
 
@@ -55,7 +55,7 @@ function validateRecord(body) {
     }
 
     if (
-        typeof body.status !== "string" ||
+        typeof body?.status !== "string" ||
         !allowedStatuses.includes(body.status.trim())
     ) {
         return "Status must be Pending, In progress or Completed.";
@@ -69,16 +69,16 @@ function validateRecord(body) {
 // GET /api/records
 // ========================================
 
-router.get("/", (req, res, next) => {
+router.get("/", async (req, res, next) => {
     try {
-        const records = db.prepare(`
+        const result = await db.execute(`
             SELECT id, title, category,
                    description, status
             FROM records
             ORDER BY id
-        `).all();
+        `);
 
-        res.status(200).json(records);
+        res.status(200).json(result.rows);
 
     } catch (error) {
         next(error);
@@ -90,7 +90,7 @@ router.get("/", (req, res, next) => {
 // GET /api/records/:id
 // ========================================
 
-router.get("/:id", (req, res, next) => {
+router.get("/:id", async (req, res, next) => {
     try {
         const id = validateId(req.params.id);
 
@@ -100,18 +100,23 @@ router.get("/:id", (req, res, next) => {
             });
         }
 
-        const record = db.prepare(`
-            SELECT * FROM records
-            WHERE id = ?
-        `).get(id);
+        const result = await db.execute({
+            sql: `
+                SELECT id, title, category,
+                       description, status
+                FROM records
+                WHERE id = ?
+            `,
+            args: [id]
+        });
 
-        if (!record) {
+        if (result.rows.length === 0) {
             return res.status(404).json({
                 message: "Record not found."
             });
         }
 
-        res.status(200).json(record);
+        res.status(200).json(result.rows[0]);
 
     } catch (error) {
         next(error);
@@ -123,10 +128,9 @@ router.get("/:id", (req, res, next) => {
 // POST /api/records
 // ========================================
 
-router.post("/", (req, res, next) => {
+router.post("/", async (req, res, next) => {
     try {
-        const validationError =
-            validateRecord(req.body);
+        const validationError = validateRecord(req.body);
 
         if (validationError) {
             return res.status(400).json({
@@ -139,23 +143,31 @@ router.post("/", (req, res, next) => {
         const description = req.body.description.trim();
         const status = req.body.status.trim();
 
-        const result = db.prepare(`
-            INSERT INTO records
-            (title, category, description, status)
-            VALUES (?, ?, ?, ?)
-        `).run(
-            title,
-            category,
-            description,
-            status
-        );
+        const result = await db.execute({
+            sql: `
+                INSERT INTO records
+                (title, category, description, status)
+                VALUES (?, ?, ?, ?)
+            `,
+            args: [
+                title,
+                category,
+                description,
+                status
+            ]
+        });
 
-        const newRecord = db.prepare(`
-            SELECT * FROM records
-            WHERE id = ?
-        `).get(result.lastInsertRowid);
+        const newRecordResult = await db.execute({
+            sql: `
+                SELECT id, title, category,
+                       description, status
+                FROM records
+                WHERE id = ?
+            `,
+            args: [result.lastInsertRowid]
+        });
 
-        res.status(201).json(newRecord);
+        res.status(201).json(newRecordResult.rows[0]);
 
     } catch (error) {
         next(error);
@@ -167,7 +179,7 @@ router.post("/", (req, res, next) => {
 // PUT /api/records/:id
 // ========================================
 
-router.put("/:id", (req, res, next) => {
+router.put("/:id", async (req, res, next) => {
     try {
         const id = validateId(req.params.id);
 
@@ -177,8 +189,7 @@ router.put("/:id", (req, res, next) => {
             });
         }
 
-        const validationError =
-            validateRecord(req.body);
+        const validationError = validateRecord(req.body);
 
         if (validationError) {
             return res.status(400).json({
@@ -191,33 +202,41 @@ router.put("/:id", (req, res, next) => {
         const description = req.body.description.trim();
         const status = req.body.status.trim();
 
-        const result = db.prepare(`
-            UPDATE records
-            SET title = ?,
-                category = ?,
-                description = ?,
-                status = ?
-            WHERE id = ?
-        `).run(
-            title,
-            category,
-            description,
-            status,
-            id
-        );
+        const result = await db.execute({
+            sql: `
+                UPDATE records
+                SET title = ?,
+                    category = ?,
+                    description = ?,
+                    status = ?
+                WHERE id = ?
+            `,
+            args: [
+                title,
+                category,
+                description,
+                status,
+                id
+            ]
+        });
 
-        if (result.changes === 0) {
+        if (result.rowsAffected === 0) {
             return res.status(404).json({
                 message: "Record not found."
             });
         }
 
-        const updatedRecord = db.prepare(`
-            SELECT * FROM records
-            WHERE id = ?
-        `).get(id);
+        const updatedResult = await db.execute({
+            sql: `
+                SELECT id, title, category,
+                       description, status
+                FROM records
+                WHERE id = ?
+            `,
+            args: [id]
+        });
 
-        res.status(200).json(updatedRecord);
+        res.status(200).json(updatedResult.rows[0]);
 
     } catch (error) {
         next(error);
@@ -229,7 +248,7 @@ router.put("/:id", (req, res, next) => {
 // DELETE /api/records/:id
 // ========================================
 
-router.delete("/:id", (req, res, next) => {
+router.delete("/:id", async (req, res, next) => {
     try {
         const id = validateId(req.params.id);
 
@@ -239,12 +258,15 @@ router.delete("/:id", (req, res, next) => {
             });
         }
 
-        const result = db.prepare(`
-            DELETE FROM records
-            WHERE id = ?
-        `).run(id);
+        const result = await db.execute({
+            sql: `
+                DELETE FROM records
+                WHERE id = ?
+            `,
+            args: [id]
+        });
 
-        if (result.changes === 0) {
+        if (result.rowsAffected === 0) {
             return res.status(404).json({
                 message: "Record not found."
             });
